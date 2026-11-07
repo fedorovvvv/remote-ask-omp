@@ -42,15 +42,12 @@ For local development: `omp plugin link /path/to/remote-ask-omp`.
 
 | | |
 | --- | --- |
-| `Alt+Shift+A` | toggle |
+| `F4` | toggle |
 | `/remote-ask on` / `off` / `toggle` | set it |
 | `/remote-ask` or `/remote-ask status` | show the current state |
 
 The switch is shared by all your omp sessions (stored in `~/.omp/agent/remote-ask-omp.json`)
 and applies to the next question without a restart. It is on by default.
-
-`Ctrl+L` is not available: omp reserves it for live voice mode and ignores extension bindings
-on it.
 
 ## How "inside herdr" is detected
 

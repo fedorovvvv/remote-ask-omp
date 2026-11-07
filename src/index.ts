@@ -14,8 +14,9 @@ import { type Answer, type AskQuestion, formatQuestion, inputPlaceholder, parseA
 import { inHerdr, readState, statePath, writeState } from "./state";
 
 export const COMMAND = "remote-ask";
-// Ctrl+L would be nicer, but omp reserves it (live voice) and ignores extension bindings on it.
-export const SHORTCUT = "alt+shift+a";
+// F4 press as terminals send it: legacy SS3 `ESC O S`, and kitty keyboard protocol `ESC [ S`,
+// `ESC [ 1;1 S`, `ESC [ 1;1:1 S` (press). Repeats (`:2`) and releases (`:3`) don't match.
+const F4_PRESS = /^\x1b(?:OS|\[(?:1;1(?::1)?)?S)$/;
 
 export default function remoteAsk(pi: ExtensionAPI): void {
 	const file = statePath(pi.pi.getAgentDir());
@@ -45,12 +46,21 @@ export default function remoteAsk(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerShortcut(SHORTCUT, {
-		description: "Toggle remote-ask (typed answers to ask questions)",
-		handler(ctx) {
+	// Not `registerShortcut` and not `parseKey`: omp's key matching misses F4 in the kitty
+	// keyboard protocol, which herdr and Ghostty use (`ESC[S`, `ESC[1;1:1S`).
+	let stopListening: (() => void) | undefined;
+	pi.on("session_start", (_event, ctx) => {
+		if (ctx.agent?.kind === "sub" || !ctx.hasUI || stopListening) return;
+		stopListening = ctx.ui.onTerminalInput(data => {
+			if (!F4_PRESS.test(data)) return undefined;
 			writeState(file, { enabled: !readState(file).enabled });
 			report(ctx);
-		},
+			return { consume: true };
+		});
+	});
+	pi.on("session_shutdown", () => {
+		stopListening?.();
+		stopListening = undefined;
 	});
 
 	// Outside herdr the built-in tool stays untouched, description and all.
