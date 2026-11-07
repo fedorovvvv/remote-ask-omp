@@ -1,0 +1,44 @@
+{
+  "name": "remote-ask-omp",
+  "version": "0.1.0",
+  "description": "omp extension: answer ask questions by typing a number or text instead of arrow keys, for Herdr on a phone or tablet",
+  "type": "module",
+  "license": "MIT",
+  "author": "Nikita Fedorov",
+  "homepage": "https://github.com/fedorovvvv/remote-ask-omp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fedorovvvv/remote-ask-omp.git"
+  },
+  "keywords": [
+    "omp",
+    "oh-my-pi",
+    "extension",
+    "herdr",
+    "ask",
+    "mobile"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "omp": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "devDependencies": {
+    "@oh-my-pi/pi-coding-agent": "18.15.0",
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
+  }
+}
