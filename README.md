@@ -42,12 +42,13 @@ For local development: `omp plugin link /path/to/remote-ask-omp`.
 
 | | |
 | --- | --- |
-| `F4` | toggle |
+| `F4` | toggle — also switches the question open on screen (the Herdr app has an `f4` key) |
 | `/remote-ask on` / `off` / `toggle` | set it |
 | `/remote-ask` or `/remote-ask status` | show the current state |
 
 The switch is shared by all your omp sessions (stored in `~/.omp/agent/remote-ask-omp.json`)
-and applies to the next question without a restart. It is on by default.
+and needs no restart. `F4` on an open question reopens it in the other form; questions already
+answered keep their answers. It is on by default.
 
 ## How "inside herdr" is detected
 

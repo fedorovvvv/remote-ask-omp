@@ -48,6 +48,8 @@ export default function remoteAsk(pi: ExtensionAPI): void {
 
 	// Not `registerShortcut` and not `parseKey`: omp's key matching misses F4 in the kitty
 	// keyboard protocol, which herdr and Ghostty use (`ESC[S`, `ESC[1;1:1S`).
+	// The question on screen right now: F4 aborts its input so `execute` reopens it in the other form.
+	let switchOpenQuestion: (() => void) | undefined;
 	let stopListening: (() => void) | undefined;
 	pi.on("session_start", (_event, ctx) => {
 		if (ctx.agent?.kind === "sub" || !ctx.hasUI || stopListening) return;
@@ -55,6 +57,7 @@ export default function remoteAsk(pi: ExtensionAPI): void {
 			if (!F4_PRESS.test(data)) return undefined;
 			writeState(file, { enabled: !readState(file).enabled });
 			report(ctx);
+			switchOpenQuestion?.();
 			return { consume: true };
 		});
 	});
@@ -95,7 +98,7 @@ export default function remoteAsk(pi: ExtensionAPI): void {
 		approval: "read",
 		async execute(_id, params, signal, _onUpdate, ctx) {
 			const native = ctx.invokeTool;
-			if (!active() || !ctx.hasUI || typeof ctx.ui?.input !== "function") {
+			if (!ctx.hasUI || typeof ctx.ui?.input !== "function") {
 				if (native) return native(params as Record<string, unknown>);
 				throw new Error("Ask tool requires interactive mode");
 			}
@@ -106,49 +109,85 @@ export default function remoteAsk(pi: ExtensionAPI): void {
 				ids.add(q.id);
 			}
 
+			// Answered questions stay answered when F4 switches forms mid-way; the rest are asked
+			// in whichever form is active.
 			const answers: { q: AskQuestion; a: Answer }[] = [];
-			for (let i = 0; i < qs.length; i++) {
-				const q = qs[i]!;
-				let hint = "";
-				for (;;) {
-					if (signal?.aborted) throw new Error("Ask input was cancelled");
-					const title = `${hint}${qs.length > 1 ? `Вопрос ${i + 1}/${qs.length}: ` : ""}${q.question}`;
-					const raw = await ctx.ui.input(title, inputPlaceholder(q), { signal });
-					if (raw === undefined) {
-						ctx.abort?.();
-						throw new Error("Ask tool was cancelled by the user");
-					}
-					const parsed = parseAnswer(q, raw);
-					if ("retry" in parsed) {
-						hint = `${parsed.retry} `;
-						continue;
-					}
-					answers.push({ q, a: parsed });
-					break;
-				}
-			}
-
-			return {
-				content: [{ type: "text", text: resultText(answers) }],
-				details: {
-					results: answers.map(({ q, a }) => ({
-						id: q.id,
-						question: q.question,
-						options: q.options.map(o => o.label),
-						multi: !!q.multi,
-						selectedOptions: a.selected,
-						customInput: a.custom,
-						note: a.note,
-					})),
-				},
+			const typedResult = (extra?: string) => {
+				const typed = answers.length ? resultText(answers, qs.length > 1) : "";
+				return {
+					content: [{ type: "text" as const, text: [typed, extra].filter(Boolean).join("\n") }],
+					details: {
+						results: answers.map(({ q, a }) => ({
+							id: q.id,
+							question: q.question,
+							options: q.options.map(o => o.label),
+							multi: !!q.multi,
+							selectedOptions: a.selected,
+							customInput: a.custom,
+							note: a.note,
+						})),
+					},
+				};
 			};
+
+			try {
+				while (answers.length < qs.length) {
+					if (signal?.aborted) throw new Error("Ask input was cancelled");
+					const switched = new AbortController();
+					switchOpenQuestion = () => switched.abort();
+					const both = signal ? AbortSignal.any([signal, switched.signal]) : switched.signal;
+
+					if (!active()) {
+						if (!native) throw new Error("Ask tool requires interactive mode");
+						const rest = qs.slice(answers.length);
+						try {
+							const result = await native({ questions: rest }, { signal: both });
+							if (!answers.length) return result;
+							const block = result.content.find(c => c.type === "text");
+							const nativeText = block && "text" in block ? block.text : "";
+							return typedResult(rest.length === 1 && qs.length > 1 ? `${rest[0]!.id}:\n  ${nativeText}` : nativeText);
+						} catch (error) {
+							if (switched.signal.aborted && !signal?.aborted) continue;
+							throw error;
+						}
+					}
+
+					const i = answers.length;
+					const q = qs[i]!;
+					let hint = "";
+					for (;;) {
+						const title = `${hint}${qs.length > 1 ? `Вопрос ${i + 1}/${qs.length}: ` : ""}${q.question}`;
+						let raw: string | undefined;
+						try {
+							raw = await ctx.ui.input(title, inputPlaceholder(q), { signal: both });
+						} catch (error) {
+							if (!switched.signal.aborted || signal?.aborted) throw error;
+						}
+						if (switched.signal.aborted && !signal?.aborted) break;
+						if (raw === undefined) {
+							ctx.abort?.();
+							throw new Error("Ask tool was cancelled by the user");
+						}
+						const parsed = parseAnswer(q, raw);
+						if ("retry" in parsed) {
+							hint = `${parsed.retry} `;
+							continue;
+						}
+						answers.push({ q, a: parsed });
+						break;
+					}
+				}
+			} finally {
+				switchOpenQuestion = undefined;
+			}
+			return typedResult();
 		},
 		renderCall(args, _options, theme) {
 			const title = theme.fg("accent", "Вопрос");
 			const qs: AskQuestion[] = Array.isArray(args?.questions) ? args.questions : [];
 			const valid = qs.filter(q => q && typeof q.question === "string" && Array.isArray(q.options));
-			// When off, the built-in picker shows the options itself.
-			if (!active() || valid.length === 0) return new Text(title, 1, 0);
+			// Shown in both modes: F4 can switch an open question to the typed form at any time.
+			if (valid.length === 0) return new Text(title, 1, 0);
 			return new Text(`${title}\n${valid.map((q, i) => formatQuestion(q, i, valid.length)).join("\n\n")}`, 1, 0);
 		},
 		renderResult(result, _options, theme) {

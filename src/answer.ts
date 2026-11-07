@@ -93,7 +93,7 @@ export function answerText(a: Answer): string {
 	return parts.join("\n");
 }
 
-export function resultText(answers: { q: AskQuestion; a: Answer }[]): string {
-	if (answers.length === 1) return answerText(answers[0]!.a);
+export function resultText(answers: { q: AskQuestion; a: Answer }[], keyed = answers.length > 1): string {
+	if (!keyed) return answers.map(({ a }) => answerText(a)).join("\n");
 	return answers.map(({ q, a }) => `${q.id}:\n${answerText(a).replace(/^/gm, "  ")}`).join("\n");
 }
